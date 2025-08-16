@@ -1,51 +1,36 @@
 const express = require('express');
-const cors = require('cors');
 const ytdl = require('ytdl-core');
+const cors = require('cors');
 
 const app = express();
-const port = 3000;
-
 app.use(cors());
 
+// Get video info
 app.get('/video-info', async (req, res) => {
-    const videoURL = req.query.url;
-    if (!videoURL || !ytdl.validateURL(videoURL)) {
-        return res.status(400).json({ error: 'Invalid YouTube URL' });
-    }
-    try {
-        const info = await ytdl.getInfo(videoURL);
-        const audioFormats = ytdl.filterFormats(info.formats, 'audioonly');
-        res.json({ audioFormats });
-    } catch (error) {
-        res.status(500).json({ error: 'Error fetching video info' });
-    }
+  const url = req.query.url;
+  if (!url) return res.status(400).json({ error: 'Missing URL' });
+  
+  try {
+    const info = await ytdl.getInfo(url);
+    const audioFormats = ytdl.filterFormats(info.formats, 'audioonly');
+    res.json({ audioFormats });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-app.get('/download', async (req, res) => {
-    const videoURL = req.query.url;
-    const itag = req.query.itag;
+// Download audio
+app.get('/download', (req, res) => {
+  const url = req.query.url;
+  const itag = req.query.itag;
 
-    if (!videoURL || !ytdl.validateURL(videoURL)) {
-        return res.status(400).send('Invalid YouTube URL');
-    }
-    if (!itag) {
-        return res.status(400).send('No itag specified');
-    }
+  if (!url || !itag) return res.status(400).send('Missing URL or itag');
 
-    try {
-        const info = await ytdl.getInfo(videoURL);
-        const format = ytdl.chooseFormat(info.formats, { quality: itag });
-        if (format) {
-            res.header('Content-Disposition', `attachment; filename="${info.videoDetails.title}.mp3"`);
-            ytdl(videoURL, { format: format }).pipe(res);
-        } else {
-            res.status(400).send('Invalid format selected');
-        }
-    } catch (error) {
-        res.status(500).send('Error downloading audio');
-    }
+  res.header('Content-Disposition', 'attachment; filename="audio.mp3"');
+  ytdl(url, { filter: format => format.itag == itag })
+    .pipe(res);
 });
 
-app.listen(port, () => {
-    console.log(`Server is running on http://localhost:3000`);
+app.listen(3000, () => {
+  console.log('Server running at http://localhost:3000');
 });
