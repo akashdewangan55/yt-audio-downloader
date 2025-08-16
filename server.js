@@ -1,39 +1,46 @@
 const express = require('express');
 const cors = require('cors');
-const ytdl = require('ytdl-core');
+const { exec } = require('child_process');
 
 const app = express();
 app.use(cors());
 
-// Get video info
-app.get('/video-info', async (req, res) => {
+// Get audio formats
+app.get('/video-info', (req, res) => {
   const url = req.query.url;
   if (!url) return res.status(400).json({ error: 'Missing URL' });
 
-  try {
-    const info = await ytdl.getInfo(url);
+  exec(`yt-dlp -j ${url}`, (err, stdout, stderr) => {
+    if (err) {
+      console.error(stderr);
+      return res.status(500).json({ error: 'yt-dlp error' });
+    }
 
-    const audioFormats = ytdl.filterFormats(info.formats, 'audioonly').map(f => ({
-      itag: f.itag,
-      mimeType: f.mimeType,
-      bitrate: f.bitrate || 0,
-      audioQuality: f.audioQuality || 'unknown'
-    }));
-
-    res.json({ audioFormats });
-  } catch (err) {
-    console.error('Error fetching video info:', err.message);
-    res.status(500).json({ error: err.message });
-  }
+    try {
+      const info = JSON.parse(stdout);
+      const audioFormats = info.formats
+        .filter(f => f.acodec !== 'none')
+        .map(f => ({
+          format_id: f.format_id,
+          ext: f.ext,
+          abr: f.abr,
+          acodec: f.acodec
+        }));
+      res.json({ audioFormats });
+    } catch (e) {
+      res.status(500).json({ error: 'Failed to parse yt-dlp output' });
+    }
+  });
 });
 
 // Download audio
 app.get('/download', (req, res) => {
   const { url, itag } = req.query;
-  if (!url || !itag) return res.status(400).send('Missing URL or itag');
+  if (!url || !itag) return res.status(400).send('Missing URL or format_id');
 
   res.header('Content-Disposition', 'attachment; filename="audio.mp3"');
-  ytdl(url, { filter: format => format.itag == itag }).pipe(res);
+  const proc = exec(`yt-dlp -f ${itag} -o - ${url}`);
+  proc.stdout.pipe(res);
 });
 
 app.listen(3000, () => {
